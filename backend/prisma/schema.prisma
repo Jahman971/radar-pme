@@ -1,0 +1,139 @@
+// Radar PME — Prisma Schema
+// PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Entreprise ──────────────────────────────────────────────────────────────
+
+model Company {
+  id                  String   @id @default(cuid())
+  siren               String   @unique
+  name                String
+  nafCode             String
+  nafLabel            String
+  legalForm           String?
+  headquartersAddress String?
+  postalCode          String?
+  city                String?
+  latitude            Float?
+  longitude           Float?
+  employeeRange       String?  // tranche d'effectif INSEE (ex: "21", "22"…)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  financialStatements FinancialStatement[]
+  events              CompanyEvent[]
+  trajectoryScore     TrajectoryScore?
+  watchlistEntries    UserWatchlist[]
+
+  @@index([nafCode])
+  @@index([postalCode])
+  @@index([city])
+  @@index([active])
+  @@index([latitude, longitude])
+}
+
+// ─── Compte annuel ───────────────────────────────────────────────────────────
+
+model FinancialStatement {
+  id              String    @id @default(cuid())
+  companyId       String
+  fiscalYear      Int       // ex: 2023
+  closingDate     DateTime?
+  revenue         Float?    // chiffre d'affaires (€)
+  operatingIncome Float?    // résultat d'exploitation
+  netIncome       Float?    // résultat net
+  equity          Float?    // capitaux propres
+  debt            Float?    // dettes financières
+  cash            Float?    // trésorerie
+  source          String    @default("INPI")
+  sourceUpdatedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, fiscalYear])
+  @@index([companyId])
+  @@index([fiscalYear])
+}
+
+// ─── Événement (BODACC, RCS…) ────────────────────────────────────────────────
+
+model CompanyEvent {
+  id          String   @id @default(cuid())
+  companyId   String
+  eventType   EventType
+  eventDate   DateTime
+  title       String
+  description String?  @db.Text
+  source      String   @default("BODACC")
+  sourceUrl   String?
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([eventDate])
+  @@index([eventType])
+}
+
+enum EventType {
+  CREATION
+  MODIFICATION
+  CESSION
+  RADIATION
+  PROCEDURE_COLLECTIVE
+  CHANGEMENT_DIRIGEANT
+  FERMETURE_ETABLISSEMENT
+  DEPOT_COMPTES
+  AUTRE
+}
+
+// ─── Score de rupture de trajectoire ────────────────────────────────────────
+
+model TrajectoryScore {
+  id               String   @id @default(cuid())
+  companyId        String   @unique
+  score            Int      // 0–100
+  revenueChange1Y  Float?   // variation CA 1 an (%)
+  revenueChange2Y  Float?   // variation CA 2 ans (%)
+  netIncomeChange  Float?   // variation résultat net (%)
+  employeeTrend    Float?   // variation effectif (%)
+  eventScore       Int      @default(0)
+  calculatedAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([score])
+  @@index([revenueChange1Y])
+}
+
+// ─── Liste de suivi utilisateur ─────────────────────────────────────────────
+
+model UserWatchlist {
+  id        String   @id @default(cuid())
+  userId    String   @default("default") // MVP: utilisateur unique
+  companyId String
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+}
+
+// ─── Paramètres de scoring ──────────────────────────────────────────────────
+
+model ScoringConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Float
+  label String?
+}
